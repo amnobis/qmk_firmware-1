@@ -60,8 +60,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     extern const matrix_row_t matrix_mask[];
 #endif
 
-static const uint8_t row_pins[MATRIX_ROWS] = MATRIX_ROW_PINS;
+// static const uint8_t row_pins[MATRIX_ROWS] = MATRIX_ROW_PINS;
 static const uint8_t col_pins[ATMEGA_COLS] = MATRIX_COL_PINS;
+static const uint8_t row_pins[MATRIX_ROWS] = MATRIX_ROW_PINS;
 
 /* matrix state(1:on, 0:off) */
 static matrix_row_t matrix[MATRIX_ROWS];
@@ -73,7 +74,6 @@ static void init_cols(void);
 static bool read_cols_on_row(matrix_row_t current_matrix[], uint8_t current_row);
 static void unselect_rows(void);
 static void select_row(uint8_t row);
-static void unselect_row(uint8_t row);
 
 __attribute__ ((weak))
 void matrix_init_quantum(void) {
@@ -121,7 +121,7 @@ void matrix_init(void) {
         MCUCR |= _BV(JTD);
     #endif
 
-    mcp23018_status = init_mcp23018();
+    mcp23018_status = true;
 
     // initialize row and col
     unselect_rows();
@@ -251,7 +251,7 @@ static bool read_cols_on_row(matrix_row_t current_matrix[], uint8_t current_row)
     } else {
         uint16_t data = 0;
         mcp23018_status = i2c_start(I2C_ADDR_WRITE);    if (mcp23018_status) goto out;
-        mcp23018_status = i2c_write(GPIOB);             if (mcp23018_status) goto out;
+        mcp23018_status = i2c_write(GPIOA);             if (mcp23018_status) goto out;
         mcp23018_status = i2c_start(I2C_ADDR_READ);     if (mcp23018_status) goto out;
         data = i2c_readNak();
         data = ~data;
@@ -260,9 +260,10 @@ static bool read_cols_on_row(matrix_row_t current_matrix[], uint8_t current_row)
         current_matrix[current_row] |= (data << 8);
     }
 
+    // uint16_t atmega_data =
+
     // For each col...
     for(uint8_t col_index = 0; col_index < ATMEGA_COLS; col_index++) {
-
         // Select the col pin to read (active low)
         uint8_t pin = col_pins[col_index];
         uint8_t pin_state = (_SFR_IO8(pin >> 4) & _BV(pin & 0xF));
@@ -272,7 +273,7 @@ static bool read_cols_on_row(matrix_row_t current_matrix[], uint8_t current_row)
     }
 
     // Unselect row
-    unselect_row(current_row);
+    unselect_rows();
 
     return (last_row_value != current_matrix[current_row]);
 }
@@ -283,50 +284,22 @@ static void select_row(uint8_t row)
         // do nothing
     } else {
         // set active row low  : 0
+        // set active row output : 1
         // set other rows hi-Z : 1
         mcp23018_status = i2c_start(I2C_ADDR_WRITE);   if (mcp23018_status) goto out;
-        mcp23018_status = i2c_write(GPIOA);            if (mcp23018_status) goto out;
-        mcp23018_status = i2c_write(0xFF & ~(1<<row)); if (mcp23018_status) goto out;
+        mcp23018_status = i2c_write(GPIOB);            if (mcp23018_status) goto out;
+        mcp23018_status = i2c_write(0xFF & ~(1<<abs(row-4))); if (mcp23018_status) goto out;
     out:
         i2c_stop();
     }
 
     uint8_t pin = row_pins[row];
-    _SFR_IO8((pin >> 4) + 1) |=  _BV(pin & 0xF); // OUT
+    _SFR_IO8((pin >> 4) + 1) |=  _BV(pin & 0xF); //  OUT
     _SFR_IO8((pin >> 4) + 2) &= ~_BV(pin & 0xF); // LOW
-}
-
-static void unselect_row(uint8_t row)
-{
-    if (mcp23018_status) { // if there was an error
-        // do nothing
-    } else {
-        // set all rows hi-Z : 1
-        mcp23018_status = i2c_start(I2C_ADDR_WRITE); if (mcp23018_status) goto out;
-        mcp23018_status = i2c_write(GPIOA);          if (mcp23018_status) goto out;
-        mcp23018_status = i2c_write(0x00 | (1<<row));           if (mcp23018_status) goto out;
-    out:
-        i2c_stop();
-    }
-
-    uint8_t pin = row_pins[row];
-    _SFR_IO8((pin >> 4) + 1) &= ~_BV(pin & 0xF); // IN
-    _SFR_IO8((pin >> 4) + 2) |=  _BV(pin & 0xF); // HI
 }
 
 static void unselect_rows(void)
 {
-    if (mcp23018_status) { // if there was an error
-        // do nothing
-    } else {
-        // set all rows hi-Z : 1
-        mcp23018_status = i2c_start(I2C_ADDR_WRITE); if (mcp23018_status) goto out;
-        mcp23018_status = i2c_write(GPIOA);          if (mcp23018_status) goto out;
-        mcp23018_status = i2c_write(0xFF);           if (mcp23018_status) goto out;
-    out:
-        i2c_stop();
-    }
-
     for(uint8_t x = 0; x < MATRIX_ROWS; x++) {
         uint8_t pin = row_pins[x];
         _SFR_IO8((pin >> 4) + 1) &= ~_BV(pin & 0xF); // IN
